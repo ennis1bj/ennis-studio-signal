@@ -1,5 +1,5 @@
 // App shell: cache-first. Feed data and keys: network-first with cache fallback (all data is encrypted at rest).
-const VERSION = 'sig-v3';
+const VERSION = 'sig-v4';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest',
   'assets/fonts/zodiak-400.woff2', 'assets/fonts/zodiak-700.woff2', 'assets/fonts/switzer-400.woff2', 'assets/fonts/switzer-500.woff2', 'assets/fonts/switzer-600.woff2',
   'assets/icons/es-mark-64.png', 'assets/icons/es-mark-192.png', 'assets/icons/es-mark-512.png', 'assets/icons/apple-touch-icon.png'];

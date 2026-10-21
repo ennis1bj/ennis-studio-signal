@@ -148,9 +148,11 @@ const icons = {
 const fmtDate = (d) => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
 
 function visibleCards() {
-  if (state.filter === 'all') return state.cards;
   if (state.filter === 'saved') return state.cards.filter((c) => state.saved.has(c.id));
-  return state.cards.filter((c) => c.service === state.filter);
+  if (state.filter === 'seen') return state.cards.filter((c) => state.seen.has(c.id));
+  // Cards seen in an earlier session are hidden. Cards seen this session stay put so you can scroll back.
+  const fresh = state.cards.filter((c) => !state.seenAtLoad.has(c.id));
+  return state.filter === 'all' ? fresh : fresh.filter((c) => c.service === state.filter);
 }
 
 
@@ -201,12 +203,10 @@ const cardVisual = (c) => c.visual || (c.figure ? { type: 'stat', value: c.figur
 
 function cardHTML(c, i, total) {
   const saved = state.saved.has(c.id);
-  const isNew = !state.seenAtLoad.has(c.id);
   return `<article class="card${cardVisual(c) ? ' has-viz' : ''}" data-id="${esc(c.id)}" data-service="${esc(c.service)}" data-n="${String(i + 1).padStart(2, '0')}" aria-label="Card ${i + 1} of ${total}: ${esc(c.headline)}">
     <div class="card__meta">
       <span class="tag">${esc(SERVICES[c.service] || c.service)}</span><span class="dot"></span>
       <span>${esc(c.source.name)}</span><span class="dot"></span><span>${fmtDate(c.published)}</span>
-      ${isNew ? '<span class="new">New</span>' : ''}
     </div>
     ${visualHTML(cardVisual(c))}
     <h2 class="card__headline">${esc(c.headline)}</h2>
@@ -225,13 +225,16 @@ function cardHTML(c, i, total) {
 
 function endHTML(empty) {
   const updated = state.updated ? new Date(state.updated).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
-  const title = empty ? (state.filter === 'saved' ? 'Nothing saved yet' : 'No cards here yet') : 'You’re caught up';
-  const body = empty
-    ? (state.filter === 'saved' ? 'Tap Save on any card to keep it here for a LinkedIn post or client conversation.' : 'Try another service line, or check back after the next morning batch.')
-    : `New cards land every weekday at 7am ET.${updated ? ` Last update ${updated}.` : ''}`;
+  const next = `New cards land every weekday at 7am ET.${updated ? ` Last update ${updated}.` : ''}`;
+  const f = state.filter, feedView = f !== 'saved' && f !== 'seen';
+  let title, body, act, label;
+  if (!empty) { title = 'You’re caught up'; body = feedView ? `Cards you’ve seen won’t show again. ${next}` : next; act = 'top'; label = 'Back to the top'; }
+  else if (f === 'saved') { title = 'Nothing saved yet'; body = 'Tap Save on any card to keep it here for a LinkedIn post or client conversation.'; act = 'all'; label = 'Back to the feed'; }
+  else if (f === 'seen') { title = 'Nothing seen yet'; body = 'Cards move here once you’ve looked at them.'; act = 'all'; label = 'Back to the feed'; }
+  else { title = 'You’re caught up'; body = `You’ve seen every card${f === 'all' ? '' : ' in this service line'}. ${next}`; act = 'seen'; label = 'Review seen cards'; }
   return `<article class="card endcard" data-n="">
     <p class="eyebrow">Ennis Studio Signal</p><h2>${title}</h2><p>${body}</p>
-    <button class="btn btn--ghost" data-act="${empty ? 'all' : 'top'}">${empty ? 'Show all cards' : 'Back to the top'}</button>
+    <button class="btn btn--ghost" data-act="${act}">${label}</button>
   </article>`;
 }
 
@@ -246,20 +249,31 @@ function renderError() {
 }
 
 let observer;
+const dwell = new Map();
+const SEEN_DWELL_MS = 1200;
+const LABELS = { all: 'All', saved: 'Saved', seen: 'Seen' };
+function markSeen(id) {
+  if (state.seen.has(id)) return;
+  state.seen.delete(id); state.seen.add(id);
+  ls.set('seen', [...state.seen].slice(-3000));
+}
 function render() {
   const list = visibleCards();
   const feed = $('#feed');
   feed.innerHTML = list.map((c, i) => cardHTML(c, i, list.length)).join('') + endHTML(list.length === 0);
   feed.scrollTop = 0;
-  $('#filter-label').textContent = state.filter === 'all' ? 'All' : state.filter === 'saved' ? 'Saved' : SERVICES[state.filter];
+  $('#filter-label').textContent = LABELS[state.filter] || SERVICES[state.filter];
   updateCounter(list.length ? 1 : 0, list.length);
   observer?.disconnect();
+  dwell.forEach(clearTimeout); dwell.clear();
   observer = new IntersectionObserver((entries) => {
     for (const en of entries) {
-      if (!en.isIntersecting) continue;
-      const el = en.target, idx = [...feed.children].indexOf(el);
+      const el = en.target, id = el.dataset.id;
+      if (!en.isIntersecting) { clearTimeout(dwell.get(el)); dwell.delete(el); continue; }
+      const idx = [...feed.children].indexOf(el);
       updateCounter(Math.min(idx + 1, list.length), list.length);
-      if (el.dataset.id && !state.seen.has(el.dataset.id)) { state.seen.add(el.dataset.id); ls.set('seen', [...state.seen].slice(-2000)); }
+      // A card counts as seen after it has been on screen for a moment, not when flicked past.
+      if (id && !state.seen.has(id) && !dwell.has(el)) dwell.set(el, setTimeout(() => { dwell.delete(el); markSeen(id); }, SEEN_DWELL_MS));
     }
   }, { root: feed, threshold: 0.6 });
   [...feed.children].forEach((el) => observer.observe(el));
@@ -295,6 +309,7 @@ $('#feed').addEventListener('click', async (e) => {
   const act = btn.dataset.act;
   if (act === 'top') return $('#feed').scrollTo({ top: 0, behavior: 'smooth' });
   if (act === 'all') { setFilter('all'); return; }
+  if (act === 'seen') { setFilter('seen'); return; }
   if (act === 'retry') return startApp();
   if (!c) return;
   if (act === 'save') {
@@ -329,13 +344,15 @@ $('#lightbox').addEventListener('click', (e) => { if (e.target.closest('#lightbo
 /* ---------- filter sheet ---------- */
 function setFilter(f) { state.filter = f; ls.set('filter', f); closeSheet(); render(); }
 function openSheet() {
-  const counts = { all: state.cards.length, saved: state.cards.filter((c) => state.saved.has(c.id)).length };
-  for (const c of state.cards) counts[c.service] = (counts[c.service] || 0) + 1;
-  const opts = [['all', 'All'], ['saved', 'Saved'], ...Object.entries(SERVICES)];
-  $('#chips').innerHTML = opts.filter(([k]) => k === 'all' || k === 'saved' || counts[k])
+  const fresh = state.cards.filter((c) => !state.seenAtLoad.has(c.id));
+  const counts = { all: fresh.length, saved: state.cards.filter((c) => state.saved.has(c.id)).length, seen: state.cards.filter((c) => state.seen.has(c.id)).length };
+  for (const c of fresh) counts[c.service] = (counts[c.service] || 0) + 1;
+  const opts = [['all', 'All'], ['saved', 'Saved'], ['seen', 'Seen'], ...Object.entries(SERVICES)];
+  $('#chips').innerHTML = opts.filter(([k]) => k in LABELS || counts[k])
     .map(([k, label]) => `<button class="chip" data-f="${k}" aria-pressed="${state.filter === k}">${label}<span>${counts[k] || 0}</span></button>`).join('');
   const unseen = state.cards.filter((c) => !state.seen.has(c.id)).length;
-  $('#sheet-meta').textContent = `${state.cards.length} cards from the last ${BATCHES_TO_LOAD} batches · ${unseen} unread`;
+  $('#sheet-meta').textContent = `${unseen} unread of ${state.cards.length} cards from the last ${BATCHES_TO_LOAD} batches. Seen cards are hidden from the feed on this device.`;
+  $('#reset-seen-btn').hidden = state.seen.size === 0;
   $('#sheet').hidden = false;
   $('#chips button')?.focus();
 }
@@ -345,6 +362,10 @@ $('#sheet').addEventListener('click', (e) => {
   if (e.target.matches('[data-close]')) return closeSheet();
   const chip = e.target.closest('[data-f]');
   if (chip) setFilter(chip.dataset.f);
+});
+$('#reset-seen-btn').addEventListener('click', () => {
+  state.seen.clear(); state.seenAtLoad = new Set(); ls.del('seen');
+  state.filter = 'all'; ls.set('filter', 'all'); closeSheet(); render(); toast('All cards marked unread');
 });
 $('#refresh-btn').addEventListener('click', async () => { closeSheet(); await startApp(); toast('Feed refreshed'); });
 $('#lock-btn').addEventListener('click', async () => { await keyStore.clear(); state.key = null; state.cards = []; $('#sheet').hidden = true; showLock(); });
@@ -359,11 +380,16 @@ document.addEventListener('keydown', (e) => {
   if (['ArrowUp', 'k', 'PageUp'].includes(e.key)) { e.preventDefault(); feed.scrollBy({ top: -h, behavior: 'smooth' }); }
   if (e.key === 's') feed.children[Math.round(feed.scrollTop / h)]?.querySelector('[data-act="save"]')?.click();
 });
+let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  if (!state.key || $('#app').hidden) return;
   // Pick up a new morning batch when the app comes back to the foreground.
-  if (document.visibilityState === 'visible' && state.key && !$('#app').hidden) {
-    getJSON('data/index.json').then((ix) => { if (ix.updated !== state.updated) { startApp(); toast('New cards loaded'); } }).catch(() => {});
-  }
+  getJSON('data/index.json').then((ix) => {
+    if (ix.updated !== state.updated) { startApp(); toast('New cards loaded'); }
+    // Back after a break with no new batch: drop the cards seen last time.
+    else if (hiddenAt && Date.now() - hiddenAt > 15 * 60e3 && !['saved', 'seen'].includes(state.filter)) { state.seenAtLoad = new Set(state.seen); render(); }
+  }).catch(() => {});
 });
 
 boot();
