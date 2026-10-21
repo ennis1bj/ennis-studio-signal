@@ -1,0 +1,15 @@
+{
+  "name": "Ennis Studio Signal",
+  "short_name": "Signal",
+  "description": "Daily AI advisory news, curated and summarized for Ennis Studio.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a1b2a",
+  "theme_color": "#0d2336",
+  "icons": [
+    { "src": "assets/icons/es-mark-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/es-mark-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
