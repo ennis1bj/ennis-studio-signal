@@ -40,15 +40,30 @@ Exit codes: `2` means validation failed (fix the cards and rerun), and `3` means
   "summary": "≤60 words: what happened, with concrete numbers",
   "why": "≤35 words: why it matters for Ennis Studio buyers or offers",
   "angle": "≤35 words: a LinkedIn post hook in Ben's voice",
-  "service": "opportunity | safe-ai | build | build-vs-buy | diligence | research | advisory",
-  "figure": { "value": "≤8 chars, e.g. 13%", "label": "short label" },
+  "service": "opportunity | safe-ai | build | build-vs-buy | diligence | research | advisory | change-risk",
+  "visual": { "type": "stat | bars | compare | timeline | steps", "...": "see Visuals" },
+  "image": { "src": "https://… full chart, opens full screen", "alt": "what the chart shows" },
   "tags": ["≤4 short tags"],
   "published": "YYYY-MM-DD (source publish date)",
   "source": { "name": "Publication", "url": "https://direct-article-url" }
 }
 ```
 
-`figure` and `tags` are optional. Use a figure only when the story has one real headline number.
+`visual`, `image` and `tags` are optional. Legacy `figure` cards still render as a stat. Aim for a visual on at least 60% of cards, using only numbers verified in the source. Cards with a visual should keep the summary near 45 words.
+
+### Visuals
+
+| type | shape | limits |
+|---|---|---|
+| `stat` | `{value, label, pct?, title?}` | value ≤8 chars, label ≤70, pct 0–100 draws a ring |
+| `bars` | `{title?, unit?, items:[{label, value, display?}], highlight?}` | 2–5 items, label ≤40 |
+| `compare` | `{title?, items:[{label, value, display}]}` | exactly 2, display ≤8 (before → after) |
+| `timeline` | `{title?, items:[{time, label}]}` | 3–4 items, time ≤8, label ≤34 |
+| `steps` | `{title?, items:[string]}` | 2–4 items, ≤40 chars each |
+
+### Change Risk Intel
+
+Every post in https://changeriskintel.com/rss.xml published since the last run becomes a `change-risk` card. Set `source.name` to "Change Risk Intel", `image.src` to the post's og:image (`https://changeriskintel.com/og/<slug>.png`), and aim `why` at change owners.
 
 | service | Ennis Studio offer |
 |--|--|
@@ -59,6 +74,7 @@ Exit codes: `2` means validation failed (fix the cards and rerun), and `3` means
 | `diligence` | Technical Due Diligence Brief: M&A, vendor risk, funding |
 | `research` | Market & Competitor Research Sprint: surveys, market data |
 | `advisory` | Fractional AI Advisor: operating models, consulting market, leadership |
+| `change-risk` | Change Risk Intel posts: outages, KEVs, patch calendars, change control |
 
 ## Local dev
 

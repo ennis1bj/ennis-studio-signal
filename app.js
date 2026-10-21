@@ -7,6 +7,7 @@ const SERVICES = {
   diligence: 'Due Diligence',
   research: 'Market Research',
   advisory: 'Fractional Advisor',
+  'change-risk': 'Change Risk Intel',
 };
 const BATCHES_TO_LOAD = 10;
 const subtle = crypto.subtle;
@@ -141,6 +142,7 @@ const icons = {
   saved: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z" fill="currentColor" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
   share: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v7h14v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   open: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   copy: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V4H4v12h4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
 };
 const fmtDate = (d) => { const [y, m, day] = d.split('-').map(Number); return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
@@ -151,23 +153,70 @@ function visibleCards() {
   return state.cards.filter((c) => c.service === state.filter);
 }
 
+
+/* ---------- infographics ---------- */
+const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v).replace(/[^0-9.\-]/g, '')) || 0);
+function ring(pct, value) {
+  const r = 42, c = 2 * Math.PI * r, p = Math.max(0, Math.min(100, pct));
+  return `<svg class="ring" viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="${r}" class="ring__track"/>
+    <circle cx="50" cy="50" r="${r}" class="ring__fill" stroke-dasharray="${(c * p / 100).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 50 50)"/>
+    <text x="50" y="50" class="ring__text" text-anchor="middle" dominant-baseline="central">${esc(value)}</text></svg>`;
+}
+function visualHTML(v) {
+  if (!v) return '';
+  const title = v.title ? `<p class="viz__title">${esc(v.title)}</p>` : '';
+  if (v.type === 'stat') {
+    const body = v.pct != null
+      ? `<div class="viz-stat viz-stat--ring">${ring(num(v.pct), v.value)}<p class="viz-stat__label">${esc(v.label)}</p></div>`
+      : `<div class="viz-stat"><span class="viz-stat__value">${esc(v.value)}</span><p class="viz-stat__label">${esc(v.label)}</p></div>`;
+    return `<figure class="viz">${title}${body}</figure>`;
+  }
+  if (v.type === 'bars') {
+    const max = Math.max(...v.items.map((i) => num(i.value))) || 1;
+    const hi = v.highlight ?? v.items.reduce((m, it, i, a) => (num(it.value) > num(a[m].value) ? i : m), 0);
+    return `<figure class="viz">${title}<div class="viz-bars">${v.items.map((it, i) => `
+      <div class="bar${i === hi ? ' bar--hi' : ''}"><span class="bar__label">${esc(it.label)}</span>
+      <span class="bar__track"><span class="bar__fill" style="--w:${Math.max(3, (num(it.value) / max) * 100).toFixed(1)}%"></span></span>
+      <span class="bar__val">${esc(it.display ?? `${it.value}${v.unit ?? ''}`)}</span></div>`).join('')}</div></figure>`;
+  }
+  if (v.type === 'compare') {
+    const [a, b] = v.items, total = num(a.value) + num(b.value) || 1;
+    return `<figure class="viz">${title}<div class="viz-compare">
+      <div class="cmp"><span class="cmp__value">${esc(a.display ?? a.value)}</span><span class="cmp__label">${esc(a.label)}</span></div>
+      <span class="cmp__vs" aria-hidden="true">→</span>
+      <div class="cmp cmp--hi"><span class="cmp__value">${esc(b.display ?? b.value)}</span><span class="cmp__label">${esc(b.label)}</span></div></div>
+      <div class="cmp__split" aria-hidden="true"><span style="flex:${num(a.value) / total}"></span><span style="flex:${num(b.value) / total}"></span></div></figure>`;
+  }
+  if (v.type === 'timeline') {
+    return `<figure class="viz">${title}<ol class="viz-time" style="--n:${v.items.length}">${v.items.map((it, i) => `
+      <li class="${i === v.items.length - 1 ? 'is-last' : ''}"><span class="t__dot"></span><span class="t__time">${esc(it.time)}</span><span class="t__label">${esc(it.label)}</span></li>`).join('')}</ol></figure>`;
+  }
+  if (v.type === 'steps') {
+    return `<figure class="viz">${title}<ol class="viz-steps">${v.items.map((it, i) => `<li><span class="s__n">${i + 1}</span><span>${esc(it)}</span></li>`).join('')}</ol></figure>`;
+  }
+  return '';
+}
+const cardVisual = (c) => c.visual || (c.figure ? { type: 'stat', value: c.figure.value, label: c.figure.label } : null);
+
 function cardHTML(c, i, total) {
   const saved = state.saved.has(c.id);
   const isNew = !state.seenAtLoad.has(c.id);
-  return `<article class="card" data-id="${esc(c.id)}" data-service="${esc(c.service)}" data-n="${String(i + 1).padStart(2, '0')}" aria-label="Card ${i + 1} of ${total}: ${esc(c.headline)}">
+  return `<article class="card${cardVisual(c) ? ' has-viz' : ''}" data-id="${esc(c.id)}" data-service="${esc(c.service)}" data-n="${String(i + 1).padStart(2, '0')}" aria-label="Card ${i + 1} of ${total}: ${esc(c.headline)}">
     <div class="card__meta">
       <span class="tag">${esc(SERVICES[c.service] || c.service)}</span><span class="dot"></span>
       <span>${esc(c.source.name)}</span><span class="dot"></span><span>${fmtDate(c.published)}</span>
       ${isNew ? '<span class="new">New</span>' : ''}
     </div>
-    ${c.figure ? `<p class="figure"><span class="figure__value">${esc(c.figure.value)}</span><span class="figure__label">${esc(c.figure.label)}</span></p>` : ''}
+    ${visualHTML(cardVisual(c))}
     <h2 class="card__headline">${esc(c.headline)}</h2>
     <p class="card__summary">${esc(c.summary)}</p>
-    <div class="why"><p class="eyebrow">Why it matters for Ennis Studio</p><p>${esc(c.why)}</p></div>
+    <div class="why"><p class="eyebrow">${c.service === 'change-risk' ? 'Why change owners should care' : 'Why it matters for Ennis Studio'}</p><p>${esc(c.why)}</p></div>
     <button class="angle" data-act="angle" aria-label="Copy LinkedIn post angle">${icons.copy}<span><b>Copy LinkedIn post angle</b>${esc(c.angle)}</span></button>
     <div class="rail">
       <button class="act" data-act="save" aria-pressed="${saved}" aria-label="${saved ? 'Remove from saved' : 'Save card'}"><span class="act__icon">${saved ? icons.saved : icons.save}</span><span>${saved ? 'Saved' : 'Save'}</span></button>
       <button class="act" data-act="share" aria-label="Share story"><span class="act__icon">${icons.share}</span><span>Share</span></button>
+      ${c.image ? `<button class="act" data-act="chart" aria-label="View full chart"><span class="act__icon">${icons.chart}</span><span>Chart</span></button>` : ''}
       <a class="act" data-act="open" href="${esc(c.source.url)}" target="_blank" rel="noopener" aria-label="Open source article"><span class="act__icon">${icons.open}</span><span>Source</span></a>
     </div>
     ${i === 0 ? '<div class="hint" aria-hidden="true">Swipe up <svg viewBox="0 0 24 24" width="12" height="12"><path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2"/></svg></div>' : ''}
@@ -220,8 +269,8 @@ function render() {
 function fitCards() {
   const limit = $('.topbar').offsetHeight + 4;
   for (const el of $('#feed').querySelectorAll('.card[data-id]')) {
-    el.classList.remove('tight', 'tighter');
-    for (const cls of ['tight', 'tighter']) {
+    el.classList.remove('tight', 'tighter', 'tightest');
+    for (const cls of ['tight', 'tighter', 'tightest']) {
       if (el.firstElementChild.offsetTop >= limit) break;
       el.classList.add(cls);
     }
@@ -259,12 +308,23 @@ $('#feed').addEventListener('click', async (e) => {
   } else if (act === 'angle') {
     const text = `${c.angle}\n\n${c.source.url}`;
     toast((await copy(text)) ? 'Post angle copied' : 'Copy failed');
+  } else if (act === 'chart') {
+    openLightbox(c.image.src, c.image.alt || c.headline);
   } else if (act === 'share') {
     const data = { title: c.headline, text: c.summary, url: c.source.url };
     if (navigator.share) { try { await navigator.share(data); } catch {} }
     else toast((await copy(`${c.headline}\n${c.source.url}`)) ? 'Link copied' : 'Copy failed');
   }
 });
+
+/* ---------- chart lightbox ---------- */
+function openLightbox(src, alt) {
+  const lb = $('#lightbox');
+  $('#lightbox-img').src = src; $('#lightbox-img').alt = alt;
+  lb.hidden = false; $('#lightbox-close').focus();
+}
+function closeLightbox() { $('#lightbox').hidden = true; $('#lightbox-img').removeAttribute('src'); }
+$('#lightbox').addEventListener('click', (e) => { if (e.target.closest('#lightbox-close') || e.target === $('#lightbox') || e.target.matches('.lightbox__scroll')) closeLightbox(); });
 
 /* ---------- filter sheet ---------- */
 function setFilter(f) { state.filter = f; ls.set('filter', f); closeSheet(); render(); }
@@ -291,6 +351,7 @@ $('#lock-btn').addEventListener('click', async () => { await keyStore.clear(); s
 $('#to-top').addEventListener('click', () => $('#feed').scrollTo({ top: 0, behavior: 'smooth' }));
 
 document.addEventListener('keydown', (e) => {
+  if (!$('#lightbox').hidden) { if (e.key === 'Escape') closeLightbox(); return; }
   if (!$('#sheet').hidden) { if (e.key === 'Escape') closeSheet(); return; }
   if ($('#app').hidden || e.target.matches('input, textarea')) return;
   const feed = $('#feed'), h = feed.clientHeight;

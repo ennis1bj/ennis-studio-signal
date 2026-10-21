@@ -72,6 +72,15 @@
     </div>
   </div>
 
+  <!-- Chart lightbox -->
+  <div id="lightbox" class="lightbox" role="dialog" aria-modal="true" aria-label="Full chart" hidden>
+    <button id="lightbox-close" class="lightbox__close" aria-label="Close chart">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <div class="lightbox__scroll"><img id="lightbox-img" alt=""></div>
+    <p class="lightbox__hint">Pinch to zoom · tap outside to close</p>
+  </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>
